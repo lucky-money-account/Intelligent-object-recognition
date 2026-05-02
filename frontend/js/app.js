@@ -254,9 +254,54 @@ function renderResults(data) {
         return;
     }
 
-    topResult.innerHTML =
-        '<div class="label">' + escapeHtml(data.top_label) + '</div>' +
-        '<div class="confidence">置信度 <strong>' + (data.top_confidence * 100).toFixed(1) + '%</strong></div>';
+    if (data.annotated_image) {
+        topResult.innerHTML =
+            '<div class="annotated-wrapper">' +
+            '<img class="annotated-img" src="data:image/jpeg;base64,' + data.annotated_image + '" alt="检测结果">' +
+            '</div>';
+
+        if (data.multi_object) {
+            topResult.innerHTML +=
+                '<div class="multi-badge">检测到 ' + data.objects.length + ' 个目标</div>';
+        } else {
+            topResult.innerHTML +=
+                '<div class="confidence" style="margin-top:8px;">MobileNetV2 细分: <strong>' + escapeHtml(data.top_label) + '</strong> (' + (data.top_confidence * 100).toFixed(1) + '%)</div>';
+        }
+    } else if (data.digit_string && data.digit_details) {
+        const rows = {};
+        data.digit_details.forEach(d => {
+            const row = d.row || 1;
+            if (!rows[row]) rows[row] = [];
+            rows[row].push(d);
+        });
+        const rowCount = Object.keys(rows).length;
+
+        const displayStr = data.digit_string.replace(/\n/g, '<br>');
+        topResult.innerHTML =
+            '<div class="digit-string">' + displayStr + '</div>' +
+            '<div class="digit-string-label">' + (rowCount > 1 ? '识别到的数字串 (' + rowCount + ' 行)' : '识别到的数字串') + '</div>';
+
+        resultList.innerHTML = '';
+        Object.keys(rows).sort().forEach(rowNum => {
+            if (rowCount > 1) {
+                resultList.innerHTML += '<div class="row-separator">第 ' + rowNum + ' 行</div>';
+            }
+            rows[rowNum].forEach((d, i) => {
+                const pct = (d.confidence * 100).toFixed(1);
+                resultList.innerHTML += '<div class="result-item">' +
+                    '<div class="rank digit-rank">' + (i + 1) + '</div>' +
+                    '<div class="item-label digit-item-label">数字 <strong>' + d.digit + '</strong></div>' +
+                    '<div class="item-bar-wrapper"><div class="item-bar" style="width: ' + Math.max(d.confidence * 100, 2) + '%"></div></div>' +
+                    '<div class="item-confidence">' + pct + '%</div>' +
+                    '</div>';
+            });
+        });
+        return;
+    } else {
+        topResult.innerHTML =
+            '<div class="label">' + escapeHtml(data.top_label) + '</div>' +
+            '<div class="confidence">置信度 <strong>' + (data.top_confidence * 100).toFixed(1) + '%</strong></div>';
+    }
 
     resultList.innerHTML = data.results.map((r, i) => {
         const pct = (r.confidence * 100).toFixed(1);

@@ -65,7 +65,23 @@ def api_predict():
 
     try:
         predict_fn = MODES[mode]['predict_fn']
-        results = predict_fn(filepath)
+        result = predict_fn(filepath)
+
+        digit_extra = None
+        general_extra = None
+
+        if mode == 'digit':
+            results, digit_extra = result
+        elif isinstance(result, dict):
+            results = result.get('results', [])
+            if 'annotated_image' in result:
+                general_extra = {
+                    'multi_object': result.get('type') == 'multi',
+                    'objects': result.get('objects', []),
+                    'annotated_image': result.get('annotated_image')
+                }
+        else:
+            results = result
 
         if not results:
             return jsonify({
@@ -74,12 +90,20 @@ def api_predict():
                 'message': '未识别到相关目标，请尝试其他图片或模式'
             })
 
-        return jsonify({
+        resp = {
             'mode': mode,
             'results': results,
-            'top_label': results[0]['label'],
-            'top_confidence': results[0]['confidence']
-        })
+            'top_label': result['top_label'] if isinstance(result, dict) else results[0]['label'],
+            'top_confidence': result['top_confidence'] if isinstance(result, dict) else results[0]['confidence']
+        }
+        if digit_extra:
+            resp['digit_string'] = digit_extra['string']
+            resp['digit_details'] = digit_extra['details']
+            if digit_extra.get('multi_row'):
+                resp['multi_row'] = True
+        if general_extra:
+            resp.update(general_extra)
+        return jsonify(resp)
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:

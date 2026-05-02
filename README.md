@@ -16,10 +16,11 @@
 |------|------|
 | 前端 | HTML5 + CSS3 + 原生 JavaScript |
 | 后端 | Flask 3.x |
-| 通用识别 | PyTorch 2.11 + torchvision MobileNetV2 |
+| 通用识别 | YOLOv8n 目标检测 + MobileNetV2 分类 |
 | 数字识别 | TensorFlow 2.21 + Keras CNN |
-| 图像处理 | Pillow |
-| 科学计算 | NumPy |
+| 目标检测 | Ultralytics YOLOv8 |
+| 图像处理 | Pillow + OpenCV |
+| 科学计算 | NumPy + SciPy |
 
 ## 系统架构
 
@@ -33,8 +34,11 @@ Flask Server (backend/app.py)
     ├── /api/modes     → 获取可用识别模式
     └── /api/predict   → 图片识别接口
             │
-            ├── 通用/动物/场景 → PyTorch MobileNetV2 (1000类)
-            └── 数字识别      → Keras CNN (0-9)
+            ├── 通用识别 → YOLOv8n 检测目标数
+            │       ├── 单目标 → MobileNetV2 精细分类(1000类)
+            │       └── 多目标 → YOLO 检测 + 边界框标注
+            ├── 动物/场景 → MobileNetV2 + 关键词过滤
+            └── 数字识别  → Keras CNN + 自动分割
 ```
 
 ## 环境要求
@@ -96,9 +100,10 @@ python run.py
 ## 识别模式详解
 
 ### 1. 通用物体识别
-- 模型：PyTorch MobileNetV2，在 ImageNet-1K 上预训练
-- 覆盖：1000 种常见物体（交通工具、日用品、食物、乐器等）
-- 场景：日常图片识别、物体分类
+- 模型：YOLOv8n (目标检测) + PyTorch MobileNetV2 (分类)
+- 自动判断图中是单物体还是多物体
+- 单物体：MobileNetV2 精细分类 1000 类 ImageNet
+- 多物体：YOLOv8n 检测 + 边界框标注，返回带框图像
 
 ### 2. 数字识别
 - 模型：Keras CNN，在 MNIST 数据集上训练，测试准确率 **99%+**

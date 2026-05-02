@@ -1,4 +1,4 @@
 @echo off
 call conda activate objrec
-python run.py
+python __main__.py
 pause

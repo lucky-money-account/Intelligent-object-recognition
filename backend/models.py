@@ -1,6 +1,7 @@
 import os
 import threading
 import io
+import logging
 import base64
 import numpy as np
 import torch
@@ -8,6 +9,7 @@ import torchvision.models as models
 from torchvision import transforms
 from PIL import Image, ImageDraw, ImageFont
 from ultralytics import YOLO
+import cv2
 
 from .config import (
     DIGIT_MODEL_PATH,
@@ -94,7 +96,10 @@ def _create_digit_model():
 def _load_yolo_model():
     global _yolo_model
     if _yolo_model is None:
-        _yolo_model = YOLO('yolov8n.pt')
+        try:
+            _yolo_model = YOLO('yolov8n.pt')
+        except Exception as e:
+            logging.getLogger('objrec').warning('Failed to load YOLO model: %s', e)
     return _yolo_model
 
 
@@ -102,7 +107,10 @@ def _load_digit_model():
     global _digit_model
     if _digit_model is None:
         if os.path.exists(DIGIT_MODEL_PATH):
-            _digit_model = keras.models.load_model(DIGIT_MODEL_PATH)
+            try:
+                _digit_model = keras.models.load_model(DIGIT_MODEL_PATH)
+            except Exception as e:
+                logging.getLogger('objrec').warning('Failed to load digit model: %s', e)
     return _digit_model
 
 
@@ -130,8 +138,8 @@ def preload_models():
             _load_digit_model()
             _load_yolo_model()
             _models_loaded = True
-        except Exception:
-            pass
+        except Exception as e:
+            logging.getLogger('objrec').warning('Model preloading partially failed: %s', e)
         finally:
             _models_loading = False
 
@@ -152,9 +160,11 @@ def _preprocess_digit(image_path):
 
 
 def _segment_digits(img_array):
-    import cv2
-
     img_uint8 = (np.clip(img_array, 0, 255)).astype(np.uint8)
+
+    border = 5
+    img_uint8 = cv2.copyMakeBorder(img_uint8, border, border, border, border,
+                                   cv2.BORDER_CONSTANT, value=0)
 
     _, binary = cv2.threshold(img_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
@@ -169,20 +179,21 @@ def _segment_digits(img_array):
     regions = []
     h, w = img_array.shape
     total_area = h * w
-    min_area = max(15, total_area * 0.0003)
+    min_area = max(12, total_area * 0.0002)
 
     for i in range(1, num_labels):
         x, y, b_w, b_h, area = stats[i]
         ratio = max(b_w, b_h) / max(min(b_w, b_h), 1)
-        if area < min_area or b_w < 3 or b_h < 3 or b_w > w * 0.85 or ratio > 6:
+        if area < min_area or b_w < 3 or b_h < 3 or b_w > (w + border * 2) * 0.95 or ratio > 8:
             continue
 
         pad = 2
-        x1 = max(0, x - pad)
-        x2 = min(w, x + b_w + pad)
-        y1 = max(0, y - pad)
-        y2 = min(h, y + b_h + pad)
-        regions.append({'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'area': area})
+        x1 = max(0, x - pad - border)
+        x2 = min(w, x + b_w + pad - border)
+        y1 = max(0, y - pad - border)
+        y2 = min(h, y + b_h + pad - border)
+        if x2 > x1 and y2 > y1:
+            regions.append({'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'area': area})
 
     if not regions:
         return []
@@ -191,20 +202,20 @@ def _segment_digits(img_array):
 
     merged = []
     for r in regions:
-        if merged and r['x1'] - merged[-1]['x2'] < 1:
+        if merged and r['x1'] - merged[-1]['x2'] < 2:
             merged[-1]['x2'] = max(merged[-1]['x2'], r['x2'])
             merged[-1]['y1'] = min(merged[-1]['y1'], r['y1'])
             merged[-1]['y2'] = max(merged[-1]['y2'], r['y2'])
         else:
             merged.append(r)
 
-    return merged[:15]
+    return merged[:20]
 
 
 def _classify_digit_region(img_array, model):
     h, w = img_array.shape
     if h < 3 or w < 3:
-        return '0', 0.0
+        return '', 0.0
 
     side = max(h, w)
     sq = np.zeros((side, side), dtype=np.float32)
@@ -245,6 +256,7 @@ def _classify_digit_region(img_array, model):
 
 
 def _filter_predictions(probs, keywords_list):
+    _load_pytorch_model()
     results = []
     for idx in range(len(probs)):
         label = _imagenet_classes[idx] if idx < len(_imagenet_classes) else f'class_{idx}'
@@ -352,7 +364,7 @@ def predict_general(image_path):
                     'annotated_image': img_b64
                 }
     except Exception:
-        pass
+        logging.getLogger('objrec').warning('YOLO detection failed, falling back to MobileNet', exc_info=True)
 
     results = _predict_mobilenet(image_path)
     return {
@@ -367,35 +379,39 @@ def _group_rows(regions):
     if len(regions) <= 1:
         return [regions]
 
-    heights = [r['y2'] - r['y1'] for r in regions]
-    avg_height = np.mean(heights) if heights else 20
+    regions = sorted(regions, key=lambda r: r['y1'])
 
-    y_centers = [(r['y1'] + r['y2']) / 2 for r in regions]
-
-    sorted_regions = sorted(zip(y_centers, regions), key=lambda x: x[0])
     rows = []
-    current_row = [sorted_regions[0][1]]
-    current_y = sorted_regions[0][0]
-    for cy, r in sorted_regions[1:]:
-        if abs(cy - current_y) < avg_height * 0.7:
-            current_row.append(r)
-        else:
-            current_row.sort(key=lambda x: x['x1'])
-            rows.append(current_row)
-            current_row = [r]
-            current_y = cy
-    current_row.sort(key=lambda x: x['x1'])
-    rows.append(current_row)
-    return rows
+    for r in regions:
+        placed = False
+        for row in rows:
+            for existing in row:
+                if r['y1'] <= existing['y2'] and existing['y1'] <= r['y2']:
+                    row.append(r)
+                    placed = True
+                    break
+            if placed:
+                break
+        if not placed:
+            rows.append([r])
+
+    result = []
+    for row in rows:
+        row.sort(key=lambda r: r['x1'])
+        result.append(row)
+
+    return result
 
 
 def _enhance_digit(img_array):
     h, w = img_array.shape
     if max(h, w) > 200 or min(h, w) < 5:
         return img_array
-    mean_val = np.mean(img_array)
-    std_val = np.std(img_array) + 1e-5
-    enhanced = np.clip((img_array - mean_val) / std_val * 0.25 + 0.5, 0, 1)
+    p_low = np.percentile(img_array, 5)
+    p_high = np.percentile(img_array, 95)
+    if p_high - p_low < 0.05:
+        return img_array
+    enhanced = np.clip((img_array - p_low) / (p_high - p_low), 0, 1)
     return enhanced
 
 

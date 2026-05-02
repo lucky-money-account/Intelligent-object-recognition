@@ -1,18 +1,24 @@
 import os
 import uuid
-import traceback
+import logging
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 
 from backend.config import FRONTEND_DIR
 from backend.models import MODES, get_available_modes, get_model_status, preload_models
 
+_log = logging.getLogger('objrec')
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path='')
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({'error': '图片过大，请上传小于 16MB 的文件'}), 413
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
 
@@ -107,7 +113,7 @@ def api_predict():
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        traceback.print_exc()
+        _log.exception('Prediction failed')
         return jsonify({'error': f'识别失败: {str(e)}'}), 500
     finally:
         try:

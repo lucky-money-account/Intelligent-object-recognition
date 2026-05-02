@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.backends.build_backend"
 
 [project]
 name = "objrec"
@@ -14,12 +14,15 @@ dependencies = [
     "tensorflow>=2.16",
     "torch>=2.0",
     "torchvision>=0.15",
+    "ultralytics>=8.0",
+    "opencv-python>=4.6",
     "pillow>=10.0",
     "numpy>=1.26",
+    "werkzeug>=3.0",
 ]
 
 [project.scripts]
-objrec = "run:main"
+objrec = "__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["backend*"]

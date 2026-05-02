@@ -1,8 +1,7 @@
 const state = {
     selectedMode: 'general',
     selectedFile: null,
-    serverOnline: false,
-    modelsReady: false
+    serverOnline: false
 };
 
 const modeIcons = {
@@ -76,18 +75,15 @@ async function waitForServer() {
 }
 
 async function pollModelsStatus() {
-    while (true) {
+    for (let attempt = 0; attempt < 30; attempt++) {
         try {
             const res = await fetch('/api/status');
             const data = await res.json();
-            state.modelsReady = data.loaded || data.pytorch;
-            if (data.loaded) {
-                await loadModes();
-                break;
-            }
+            if (data.loaded || (data.pytorch && data.digit)) break;
         } catch (e) {}
         await sleep(2000);
     }
+    try { await loadModes(); } catch (e) {}
 }
 
 function showStatusBanner(msg, type) {

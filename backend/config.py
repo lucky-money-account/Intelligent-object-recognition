@@ -2,11 +2,9 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SAVED_MODELS_DIR = os.path.join(BASE_DIR, 'saved_models')
-DATA_DIR = os.path.join(BASE_DIR, 'data')
 FRONTEND_DIR = os.path.join(BASE_DIR, 'frontend')
 
 DIGIT_MODEL_PATH = os.path.join(SAVED_MODELS_DIR, 'digit_model.h5')
-DIGIT_MODEL_WEIGHTS_PATH = os.path.join(SAVED_MODELS_DIR, 'digit_model.weights.h5')
 
 IMG_SIZE_GENERAL = (224, 224)
 IMG_SIZE_DIGIT = (28, 28)
